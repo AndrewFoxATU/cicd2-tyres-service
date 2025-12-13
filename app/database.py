@@ -7,7 +7,7 @@ from sqlalchemy.exc import OperationalError
 POSTGRES_USER = os.getenv("POSTGRES_USER", "tyre_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "tyre_pass")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "tyre_db")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres_tyres")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 DATABASE_URL = (
