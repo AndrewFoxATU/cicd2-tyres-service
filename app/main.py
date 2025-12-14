@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from decimal import Decimal
 
-from app.database import engine, SessionLocal
-from app.models import Base, TyreModel
-from app.schemas import TyreCreate, TyreSchema, TyreUpdate
+from database import engine, SessionLocal
+from models import Base, TyreModel
+from schemas import TyreCreate, TyreSchema, TyreUpdate
 
 
 
