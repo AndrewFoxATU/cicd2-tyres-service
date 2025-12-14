@@ -1,10 +1,10 @@
-# backend/tyres_service/load_csv.py
+# backend/tyres_service/app/load_csv.py
 import csv
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal, engine
-from app.models import Base, TyreModel
+from database import SessionLocal, engine
+from models import Base, TyreModel
 
 Base.metadata.create_all(bind=engine)
 
