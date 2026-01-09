@@ -1,0 +1,4 @@
+[run]
+omit =
+    app/tyre_rpc_worker.py
+    app/order_worker.py
