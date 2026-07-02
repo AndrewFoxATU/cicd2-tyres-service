@@ -1,4 +1,5 @@
 # backend/tyres_service/main.py
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from decimal import Decimal
 
-from app.database import engine, SessionLocal 
-from app.models import Base, TyreModel 
-from app.schemas import TyreCreate, TyreSchema, TyreUpdate 
+from app.database import engine, SessionLocal
+from app.models import Base, TyreModel
+from app.schemas import TyreCreate, TyreSchema, TyreUpdate
+from app.auth import TokenUser, get_current_user, require_roles
 
 
 
@@ -21,9 +23,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,10 +66,14 @@ def health():
 # ===============================================
 
 # -----------------------------
-# CREATE TYRE
+# CREATE TYRE (admin / employee+)
 # -----------------------------
 @app.post("/api/tyres", status_code=201)
-def create_tyre(payload: TyreCreate, db: Session = Depends(get_db)):
+def create_tyre(
+    payload: TyreCreate,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(require_roles("admin", "employee+")),
+):
     data = payload.model_dump()
 
     data["retail_cost"] = (data["cost"] * Decimal("1.35")).quantize(Decimal("0.01"))
@@ -77,7 +89,10 @@ def create_tyre(payload: TyreCreate, db: Session = Depends(get_db)):
 # LIST TYRES
 # -----------------------------
 @app.get("/api/tyres")
-def list_tyres(db: Session = Depends(get_db)):
+def list_tyres(
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(get_current_user),
+):
     stmt = select(TyreModel).order_by(TyreModel.id)
     return db.execute(stmt).scalars().all()
 
@@ -86,7 +101,11 @@ def list_tyres(db: Session = Depends(get_db)):
 # GET TYRE BY ID
 # -----------------------------
 @app.get("/api/tyres/{tyre_id}")
-def get_tyre(tyre_id: int, db: Session = Depends(get_db)):
+def get_tyre(
+    tyre_id: int,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(get_current_user),
+):
     tyre = db.get(TyreModel, tyre_id)
     if not tyre:
         raise HTTPException(status_code=404, detail="Tyre not found")
@@ -94,10 +113,15 @@ def get_tyre(tyre_id: int, db: Session = Depends(get_db)):
 
 
 # -----------------------------
-# UPDATE TYRE (PUT)
+# UPDATE TYRE (PUT, admin / employee+)
 # -----------------------------
 @app.put("/api/tyres/{tyre_id}")
-def update_tyre_put(tyre_id: int, payload: TyreSchema, db: Session = Depends(get_db)):
+def update_tyre_put(
+    tyre_id: int,
+    payload: TyreSchema,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(require_roles("admin", "employee+")),
+):
     tyre = db.get(TyreModel, tyre_id)
     if not tyre:
         raise HTTPException(status_code=404, detail="Tyre not found")
@@ -116,10 +140,16 @@ def update_tyre_put(tyre_id: int, payload: TyreSchema, db: Session = Depends(get
 
 
 # -----------------------------
-# PARTIAL UPDATE (PATCH)
+# PARTIAL UPDATE (PATCH, admin / employee+ / service)
+# "service" is the orders service adjusting stock during a sale.
 # -----------------------------
 @app.patch("/api/tyres/{tyre_id}")
-def update_tyre_patch(tyre_id: int, payload: TyreUpdate, db: Session = Depends(get_db)):
+def update_tyre_patch(
+    tyre_id: int,
+    payload: TyreUpdate,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(require_roles("admin", "employee+", "service")),
+):
     tyre = db.get(TyreModel, tyre_id)
     if not tyre:
         raise HTTPException(status_code=404, detail="Tyre not found")
@@ -141,10 +171,14 @@ def update_tyre_patch(tyre_id: int, payload: TyreUpdate, db: Session = Depends(g
 
 
 # -----------------------------
-# DELETE TYRE
+# DELETE TYRE (admin / employee+)
 # -----------------------------
 @app.delete("/api/tyres/{tyre_id}", status_code=204)
-def delete_tyre(tyre_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_tyre(
+    tyre_id: int,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(require_roles("admin", "employee+")),
+) -> Response:
     tyre = db.get(TyreModel, tyre_id)
     if not tyre:
         raise HTTPException(status_code=404, detail="Tyre not found")
