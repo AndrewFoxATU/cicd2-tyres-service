@@ -2,7 +2,7 @@
 from pydantic import BaseModel, StringConstraints
 from typing import Annotated, Literal, Optional
 from decimal import Decimal
-from annotated_types import Ge, Gt
+from annotated_types import Ge, Gt, Le
 
 # -------------------------------------------------
 #                Reusable Shared Types
@@ -57,6 +57,11 @@ class TyreSchema(BaseModel):
 
 class TyreCreate(TyreSchema):
     pass
+
+
+class StockAdjust(BaseModel):
+    """Atomic stock adjustment: negative delta sells stock, positive restores it."""
+    delta: Annotated[int, Ge(-1000), Le(1000)]
 
 class TyreUpdate(BaseModel):
     brand: Optional[BrandStr] = None

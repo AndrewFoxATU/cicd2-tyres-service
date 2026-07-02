@@ -2,3 +2,4 @@
 omit =
     app/tyre_rpc_worker.py
     app/order_worker.py
+    app/run_migrations.py
