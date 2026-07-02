@@ -112,3 +112,57 @@ def test_patch_invalid_speed_rate(client):
         json={"speed_rate": "INVALID"},
     )
     assert response.status_code == 422
+
+
+# Auth / role enforcement
+
+def test_requests_without_token_are_rejected(anon_client):
+    assert anon_client.get("/api/tyres").status_code == 401
+    assert anon_client.post("/api/tyres", json=VALID_PAYLOAD).status_code == 401
+    assert anon_client.patch("/api/tyres/1", json={"quantity": 1}).status_code == 401
+    assert anon_client.delete("/api/tyres/1").status_code == 401
+
+
+def test_invalid_token_is_rejected(anon_client):
+    response = anon_client.get(
+        "/api/tyres", headers={"Authorization": "Bearer garbage"}
+    )
+    assert response.status_code == 401
+
+
+def test_employee_can_read_but_not_write(client, anon_client, employee_headers):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()
+
+    read = anon_client.get(f"/api/tyres/{created['id']}", headers=employee_headers)
+    assert read.status_code == 200
+
+    write = anon_client.post("/api/tyres", json=VALID_PAYLOAD, headers=employee_headers)
+    assert write.status_code == 403
+
+    patch = anon_client.patch(
+        f"/api/tyres/{created['id']}", json={"quantity": 1}, headers=employee_headers
+    )
+    assert patch.status_code == 403
+
+    delete = anon_client.delete(f"/api/tyres/{created['id']}", headers=employee_headers)
+    assert delete.status_code == 403
+
+
+def test_service_token_can_patch_stock(client, anon_client, service_headers):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()
+
+    response = anon_client.patch(
+        f"/api/tyres/{created['id']}", json={"quantity": 5}, headers=service_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["quantity"] == 5
+
+    # but a service token cannot create or delete tyres
+    assert (
+        anon_client.post("/api/tyres", json=VALID_PAYLOAD, headers=service_headers).status_code
+        == 403
+    )
+    assert (
+        anon_client.delete(f"/api/tyres/{created['id']}", headers=service_headers).status_code
+        == 403
+    )
