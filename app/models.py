@@ -1,5 +1,5 @@
 # backend/tyres_service/models.py
-from sqlalchemy import Column, Integer, String, Boolean, Numeric
+from sqlalchemy import CheckConstraint, Column, Integer, String, Boolean, Numeric
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from decimal import Decimal
 
@@ -8,6 +8,10 @@ class Base(DeclarativeBase):
 
 class TyreModel(Base):
     __tablename__ = "tyres"
+    __table_args__ = (
+        CheckConstraint("quantity >= 0", name="ck_tyres_quantity_nonnegative"),
+        CheckConstraint("cost > 0", name="ck_tyres_cost_positive"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     brand: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)

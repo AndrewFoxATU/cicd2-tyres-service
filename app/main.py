@@ -4,14 +4,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from decimal import Decimal
 
 from app.database import engine, SessionLocal
 from app.models import Base, TyreModel
-from app.schemas import TyreCreate, TyreSchema, TyreUpdate
+from app.schemas import StockAdjust, TyreCreate, TyreSchema, TyreUpdate
 from app.auth import TokenUser, get_current_user, require_roles
+
+# Retail price = cost * markup; configurable so the business can change
+# its margin without a code change.
+RETAIL_MARKUP = Decimal(os.getenv("RETAIL_MARKUP", "1.35"))
 
 
 
@@ -76,7 +80,7 @@ def create_tyre(
 ):
     data = payload.model_dump()
 
-    data["retail_cost"] = (data["cost"] * Decimal("1.35")).quantize(Decimal("0.01"))
+    data["retail_cost"] = (data["cost"] * RETAIL_MARKUP).quantize(Decimal("0.01"))
 
     tyre = TyreModel(**data)
     db.add(tyre)
@@ -129,7 +133,7 @@ def update_tyre_put(
     data = payload.model_dump()
     data.pop("retail_cost", None)
 
-    data["retail_cost"] = (data["cost"] * Decimal("1.35")).quantize(Decimal("0.01"))
+    data["retail_cost"] = (data["cost"] * RETAIL_MARKUP).quantize(Decimal("0.01"))
 
     for field, value in data.items():
         setattr(tyre, field, value)
@@ -159,7 +163,7 @@ def update_tyre_patch(
 
     if "cost" in update_data:
         update_data["retail_cost"] = (
-            update_data["cost"] * Decimal("1.35")
+            update_data["cost"] * RETAIL_MARKUP
         ).quantize(Decimal("0.01"))
 
     for field, value in update_data.items():
@@ -168,6 +172,41 @@ def update_tyre_patch(
     commit_or_rollback(db, "Failed to update tyre")
     db.refresh(tyre)
     return tyre
+
+
+# -----------------------------
+# ADJUST STOCK (admin / employee+ / service)
+# Atomic conditional update so concurrent sales cannot oversell:
+# the quantity check and the decrement happen in one statement.
+# Negative delta sells stock; positive delta restores it (compensation).
+# -----------------------------
+@app.post("/api/tyres/{tyre_id}/stock")
+def adjust_stock(
+    tyre_id: int,
+    payload: StockAdjust,
+    db: Session = Depends(get_db),
+    _user: TokenUser = Depends(require_roles("admin", "employee+", "service")),
+):
+    if payload.delta == 0:
+        raise HTTPException(status_code=400, detail="Delta must not be zero")
+
+    stmt = (
+        update(TyreModel)
+        .where(TyreModel.id == tyre_id)
+        .where(TyreModel.quantity + payload.delta >= 0)
+        .values(quantity=TyreModel.quantity + payload.delta)
+        .returning(TyreModel.id)
+    )
+    updated_id = db.execute(stmt).scalar_one_or_none()
+
+    if updated_id is None:
+        db.rollback()
+        if not db.get(TyreModel, tyre_id):
+            raise HTTPException(status_code=404, detail="Tyre not found")
+        raise HTTPException(status_code=409, detail="Not enough stock")
+
+    db.commit()
+    return db.get(TyreModel, tyre_id)
 
 
 # -----------------------------

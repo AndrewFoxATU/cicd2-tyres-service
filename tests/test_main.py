@@ -148,6 +148,59 @@ def test_employee_can_read_but_not_write(client, anon_client, employee_headers):
     assert delete.status_code == 403
 
 
+# Atomic stock adjustment
+
+def test_stock_decrement_and_restore(client):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()  # quantity 10
+
+    sell = client.post(f"/api/tyres/{created['id']}/stock", json={"delta": -3})
+    assert sell.status_code == 200
+    assert sell.json()["quantity"] == 7
+
+    restore = client.post(f"/api/tyres/{created['id']}/stock", json={"delta": 3})
+    assert restore.status_code == 200
+    assert restore.json()["quantity"] == 10
+
+
+def test_stock_decrement_beyond_stock_returns_409(client):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()  # quantity 10
+
+    resp = client.post(f"/api/tyres/{created['id']}/stock", json={"delta": -11})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Not enough stock"
+
+    # stock unchanged after the failed decrement
+    tyre = client.get(f"/api/tyres/{created['id']}").json()
+    assert tyre["quantity"] == 10
+
+
+def test_stock_adjust_zero_delta_returns_400(client):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()
+    resp = client.post(f"/api/tyres/{created['id']}/stock", json={"delta": 0})
+    assert resp.status_code == 400
+
+
+def test_stock_adjust_unknown_tyre_returns_404(client):
+    resp = client.post("/api/tyres/99999/stock", json={"delta": -1})
+    assert resp.status_code == 404
+
+
+def test_stock_adjust_service_token_allowed_employee_forbidden(
+    client, anon_client, service_headers, employee_headers
+):
+    created = client.post("/api/tyres", json=VALID_PAYLOAD).json()
+
+    ok = anon_client.post(
+        f"/api/tyres/{created['id']}/stock", json={"delta": -1}, headers=service_headers
+    )
+    assert ok.status_code == 200
+
+    denied = anon_client.post(
+        f"/api/tyres/{created['id']}/stock", json={"delta": -1}, headers=employee_headers
+    )
+    assert denied.status_code == 403
+
+
 def test_service_token_can_patch_stock(client, anon_client, service_headers):
     created = client.post("/api/tyres", json=VALID_PAYLOAD).json()
 
